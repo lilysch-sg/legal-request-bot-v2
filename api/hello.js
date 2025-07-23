@@ -4,38 +4,60 @@ function handler(req, res) {
   const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
   const TEST_CHANNEL = 'C096BUUPWRJ';
   
-  console.log('Bot token exists:', !!SLACK_BOT_TOKEN);
-  console.log('Test channel:', TEST_CHANNEL);
-  
   if (req.method === 'POST') {
     const { challenge, event } = req.body;
     
-    console.log('Request body:', JSON.stringify(req.body, null, 2));
-    console.log('Event received:', event ? event.type : 'no event');
-    console.log('Channel:', event ? event.channel : 'no channel');
-    
     // Handle URL verification
     if (challenge) {
-      console.log('Challenge received:', challenge);
       return res.status(200).send(challenge);
     }
     
     // Handle message events
-    if (event && event.type === 'message') {
-      console.log('Message event details:');
-      console.log('- Text:', event.text);
-      console.log('- Channel:', event.channel);
-      console.log('- Expected channel:', TEST_CHANNEL);
-      console.log('- Bot ID:', event.bot_id);
-      console.log('- Thread TS:', event.thread_ts);
-      console.log('- User:', event.user);
+    if (event && event.type === 'message' && event.channel === TEST_CHANNEL && !event.bot_id && !event.thread_ts) {
+      console.log('Creating ticket for message:', event.text);
       
-      if (event.channel === TEST_CHANNEL && !event.bot_id && !event.thread_ts) {
-        console.log('✅ Message matches criteria - would create ticket');
-        // Just log for now, don't create ticket yet
-      } else {
-        console.log('❌ Message does not match criteria');
+      // Simple classification
+      const messageText = event.text.toLowerCase();
+      let type = 'General Legal';
+      let assignee = '<@U0473NNB3GA>'; // Sam Mandell
+      
+      if (messageText.includes('msa') || messageText.includes('master agreement')) {
+        type = 'Commercial Contracts';
+        assignee = '<@U06K65CQ31A>'; // Lily Schurra
+      } else if (messageText.includes('nda')) {
+        type = 'NDAs';
+        assignee = '<@U06PS7F4V8B>'; // Melanie Cameron
+      } else if (messageText.includes('privacy') || messageText.includes('gdpr')) {
+        type = 'Privacy';
+        assignee = '<@U06K65CQ31A>'; // Lily Schurra
       }
+      
+      // Generate ticket number
+      const ticketNumber = `LGL-${String(Math.floor(Math.random() * 99999)).padStart(5, '0')}`;
+      
+      // Post reply in thread
+      const threadMessage = `🎫 Ticket ${ticketNumber} created\nType: ${type}\nAssigned to: ${assignee}\nStatus: Open`;
+      
+      // Use global fetch (available in Node.js 18+)
+      fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${SLACK_BOT_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          channel: event.channel,
+          text: threadMessage,
+          thread_ts: event.ts
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        console.log('Slack API response:', data);
+      })
+      .catch(err => {
+        console.error('Slack API error:', err);
+      });
     }
     
     return res.status(200).send('OK');
